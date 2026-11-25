@@ -1,89 +1,191 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Path, Polygon } from 'react-native-svg';
-import { Trophy, Eye, EyeOff } from 'lucide-react-native';
-// import apiFetch from '../api/apiFetch'; // <-- DESCOMENTAR AL CONECTAR API
+import { Ionicons } from '@expo/vector-icons';
+import apiFetch from '../api/apiFetch';
 import { COLORS } from '../styles/theme';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const irALogin = useCallback(() => {
+    if (navigation?.replace) {
+      navigation.replace('Login');
+    }
+  }, [navigation]);
+
   useEffect(() => {
-    AsyncStorage.getItem('sesion_deportes').then((sesion) => {
-      if (sesion) navigation.replace('MainTabs');
-    });
-  }, []);
+    let active = true;
+    AsyncStorage.getItem('sesion_deportes')
+      .then((raw) => {
+        if (!active || !raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed?.token) {
+          navigation.replace('MainTabs');
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [navigation]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      return Alert.alert('Campos requeridos', 'Ingresa tus datos para acceder al sistema.');
+      setErrorMsg('Por favor ingresa tu correo y contraseña.');
+      return;
     }
 
+    setErrorMsg('');
     setLoading(true);
 
-    /* =========================================================================
-       CÓDIGO REAL PARA CUANDO EL PROFESOR PASE LA API (DESCOMENTAR ESTE BLOQUE):
-       =========================================================================
     try {
-      const data = await apiFetch.post('/auth/login', { email, password });
-      const payload = {
-        email: data.user?.email || email,
-        role: data.user?.rol || data.user?.role || 'USER',
-        token: data.token || data.accessToken,
+      const data = await apiFetch.post(
+        '/api/auth/login',
+        {
+          email: email.trim(),
+          password,
+        },
+        irALogin
+      );
+
+      const token =
+        data?.token ||
+        data?.accessToken ||
+        data?.data?.token ||
+        data?.data?.accessToken;
+
+      const rawRole =
+        data?.user?.rol ||
+        data?.user?.role ||
+        data?.rol ||
+        data?.role ||
+        data?.data?.user?.rol ||
+        data?.data?.rol ||
+        'USER';
+      const role = String(rawRole).toUpperCase();
+
+      if (!token) {
+        throw new Error('La API no devolvió un token válido.');
+      }
+
+      if (role === 'ADMIN') {
+        throw new Error('Esta app móvil es exclusiva para estudiantes (USER).');
+      }
+
+      const usuario = data?.user || data?.data?.user || {
+        email: email.trim(),
+        rol: role,
       };
-      await AsyncStorage.setItem('sesion_deportes', JSON.stringify(payload));
+
+      await AsyncStorage.setItem(
+        'sesion_deportes',
+        JSON.stringify({
+          token,
+          role,
+          email: usuario.email || email.trim(),
+          user: usuario,
+        })
+      );
+
       navigation.replace('MainTabs');
     } catch (error) {
-      Alert.alert('Error al iniciar sesión', error.message || 'Credenciales incorrectas.');
+      const msg = error?.message || 'No se pudo iniciar sesión.';
+      setErrorMsg(msg);
+      Alert.alert('Error al iniciar sesión', msg);
     } finally {
       setLoading(false);
     }
-    return;
-    ========================================================================= */
-
-    // SIMULACIÓN TEMPORAL SIN BACKEND
-    setTimeout(async () => {
-      const payload = {
-        email,
-        role: 'USER',
-        token: 'mock-jwt-user-token',
-      };
-      await AsyncStorage.setItem('sesion_deportes', JSON.stringify(payload));
-      setLoading(false);
-      navigation.replace('MainTabs');
-    }, 500);
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ flexGrow: 1 }}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+    >
+      {/* Banner superior Rojo Terracota con Trofeo y Balones en líneas blancas */}
       <View style={styles.topBanner}>
-        <Trophy size={42} color="#FFFFFF" strokeWidth={2} />
-        <View style={{ flexDirection: 'row', gap: 14, marginTop: 4, marginBottom: 8 }}>
-          <Svg width={36} height={36} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="1.8">
+        <Ionicons name="trophy-outline" size={44} color="#FFFFFF" />
+
+        <View style={styles.ballsRow}>
+          {/* Balón de Básquetbol */}
+          <Svg
+            width={38}
+            height={38}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#FFFFFF"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <Circle cx="12" cy="12" r="10" />
-            <Path d="M2.2 12h19.6M12 2.2v19.6" />
+            <Path d="M2.5 12h19" />
+            <Path d="M12 2v20" />
+            <Path d="M4.9 4.9c4.2 3.8 4.2 10.4 0 14.2" />
+            <Path d="M19.1 4.9c-4.2 3.8-4.2 10.4 0 14.2" />
           </Svg>
-          <Svg width={36} height={36} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="1.8">
+
+          {/* Balón de Fútbol */}
+          <Svg
+            width={38}
+            height={38}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#FFFFFF"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <Circle cx="12" cy="12" r="10" />
-            <Polygon points="12 7 16.5 10.3 14.8 15.5 9.2 15.5 7.5 10.3" />
+            <Polygon points="12 7.5 16.2 10.6 14.6 15.5 9.4 15.5 7.8 10.6" />
+            <Path d="M12 2v5.5" />
+            <Path d="M16.2 10.6l5-2.1" />
+            <Path d="M14.6 15.5l3.2 4.3" />
+            <Path d="M9.4 15.5l-3.2 4.3" />
+            <Path d="M7.8 10.6l-5-2.1" />
           </Svg>
         </View>
-        <Text style={styles.bannerTitle}>Coordinación{'\n'}Deportiva</Text>
-        <Text style={styles.bannerSub}>Gestión de material y espacios{'\n'}deportivos.</Text>
+
+        <Text style={styles.bannerTitle}>
+          Coordinación{'\n'}Deportiva
+        </Text>
+        <Text style={styles.bannerSub}>
+          Gestión de material y espacios{'\n'}deportivos.
+        </Text>
       </View>
 
+      {/* Tarjeta blanca del formulario */}
       <View style={styles.bottomArea}>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Iniciar Sesión</Text>
-          <Text style={styles.cardSub}>Ingresa tus datos para{'\n'}acceder al sistema</Text>
+          <Text style={styles.cardSub}>
+            Ingresa tus datos para{'\n'}acceder al sistema
+          </Text>
+
+          {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
 
           <Text style={styles.label}>Correo Electrónico</Text>
           <TextInput
             style={styles.input}
+            placeholder="alumno@equipo-b2.utr"
+            placeholderTextColor={COLORS.muted}
             autoCapitalize="none"
             keyboardType="email-address"
             value={email}
@@ -93,31 +195,63 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.rowBetween}>
             <Text style={styles.label}>Contraseña</Text>
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-              <Text style={styles.mutedSmall}>{showPassword ? 'Ocultar' : 'Mostrar'}</Text>
+              <Text style={styles.mutedSmall}>
+                {showPassword ? 'Ocultar' : 'Mostrar'}
+              </Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.passwordWrapper}>
             <TextInput
-              style={[styles.input, { marginBottom: 0, paddingRight: 40 }]}
+              style={[styles.input, styles.passwordInput]}
+              placeholder="••••••••"
+              placeholderTextColor={COLORS.muted}
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
             />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-              {showPassword ? <EyeOff size={18} color={COLORS.muted} /> : <Eye size={18} color={COLORS.muted} />}
+            <TouchableOpacity
+              onPress={() => setShowPassword(!showPassword)}
+              style={styles.eyeBtn}
+            >
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={18}
+                color={COLORS.muted}
+              />
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.forgotText}>Olvidé mi contraseña</Text>
-
-          <TouchableOpacity style={styles.pillBtn} onPress={handleLogin} disabled={loading}>
-            <Text style={styles.pillBtnText}>{loading ? 'Validando...' : 'Iniciar Sesión'}</Text>
+          <TouchableOpacity
+            onPress={() =>
+              Alert.alert(
+                'Recuperar contraseña',
+                'Solicita el restablecimiento de tu contraseña con Coordinación Deportiva.'
+              )
+            }
+          >
+            <Text style={styles.forgotText}>Olvidé mi contraseña</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => navigation.navigate('Register')} style={{ marginTop: 22 }}>
+          <TouchableOpacity
+            style={[styles.pillBtn, loading && { backgroundColor: COLORS.muted }]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.pillBtnText}>Iniciar Sesión</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Register')}
+            style={styles.registerBtn}
+          >
             <Text style={styles.registerLink}>
-              ¿No tienes cuenta? <Text style={{ fontWeight: '700', textDecorationLine: 'underline' }}>Regístrate</Text>
+              ¿No tienes cuenta?{' '}
+              <Text style={styles.registerBold}>Regístrate</Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -131,12 +265,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bg,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   topBanner: {
     backgroundColor: COLORS.primary,
     paddingTop: 52,
     paddingBottom: 32,
     paddingHorizontal: 24,
     alignItems: 'center',
+  },
+  ballsRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 6,
+    marginBottom: 10,
   },
   bannerTitle: {
     color: '#FFFFFF',
@@ -149,7 +292,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     textAlign: 'center',
-    opacity: 0.9,
+    opacity: 0.92,
     marginTop: 8,
   },
   bottomArea: {
@@ -175,14 +318,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 18,
   },
+  errorText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
   label: {
     fontSize: 12,
+    fontWeight: '600',
     color: COLORS.text,
     marginBottom: 4,
   },
   mutedSmall: {
     fontSize: 11,
     color: COLORS.muted,
+    fontWeight: '600',
   },
   rowBetween: {
     flexDirection: 'row',
@@ -197,10 +349,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 14,
     color: COLORS.text,
+    backgroundColor: '#FFFFFF',
   },
   passwordWrapper: {
     position: 'relative',
     justifyContent: 'center',
+  },
+  passwordInput: {
+    marginBottom: 0,
+    paddingRight: 40,
   },
   eyeBtn: {
     position: 'absolute',
@@ -228,9 +385,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
+  registerBtn: {
+    marginTop: 20,
+  },
   registerLink: {
     color: COLORS.info,
     textAlign: 'center',
     fontSize: 13,
+  },
+  registerBold: {
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });

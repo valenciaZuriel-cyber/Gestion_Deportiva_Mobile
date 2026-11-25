@@ -1,309 +1,335 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
-  TextInput,
   Modal,
+  TextInput,
   StyleSheet,
+  ScrollView,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { Search, X } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import MobileHeader from '../components/MobileHeader';
-import { INITIAL_ITEMS } from '../api/mockData';
-// import apiFetch from '../api/apiFetch'; // <-- DESCOMENTAR AL CONECTAR API
 import { COLORS } from '../styles/theme';
+import apiFetch from '../api/apiFetch';
 
-const DEPORTES = ['Todo', 'Fútbol', 'Básquetbol', 'Voleibol'];
+const DEPORTES = ['Todo', 'Fútbol', 'Básquetbol', 'Voleibol', 'Otros'];
+const DEPORTES_PRINCIPALES = ['fútbol', 'futbol', 'básquetbol', 'basquetbol', 'voleibol'];
 
-const getBadgeColor = (estado) => {
-  if (estado === 'NUEVO') return COLORS.success;
-  if (estado === 'BUENO') return COLORS.info;
-  return COLORS.warning;
-};
+function normalizarTexto(texto) {
+  return String(texto || '').trim().toLowerCase();
+}
 
-export default function InventoryScreen({ navigation, loans, setLoans }) {
-  const [items, setItems] = useState(INITIAL_ITEMS);
+function normalizarItem(raw, index) {
+  const disponible = Number(
+    raw?.cantidadDisponible ?? raw?.disponibles ?? raw?.stockDisponible ?? raw?.cantidad ?? 0
+  );
+  const total = Number(
+    raw?.cantidadTotal ?? raw?.total ?? raw?.stockTotal ?? Math.max(disponible, 0)
+  );
+  const estado = String(
+    raw?.estadoFisico ?? raw?.estado_fisico ?? raw?.estado ?? 'BUENO'
+  ).toUpperCase();
+
+  return {
+    id: raw?.id ?? raw?._id ?? index + 1,
+    codigo: raw?.codigo ?? raw?.sku ?? `MAT-${index + 1}`,
+    nombre: raw?.nombre ?? raw?.name ?? raw?.titulo ?? 'Artículo deportivo',
+    deporte: raw?.deporte ?? raw?.disciplina ?? raw?.categoria ?? 'Otros',
+    estadoFisico: estado,
+    cantidadDisponible: disponible,
+    cantidadTotal: total,
+  };
+}
+
+export default function InventoryScreen({ navigation, onLoanCreated }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
   const [deporte, setDeporte] = useState('Todo');
+  const [search, setSearch] = useState('');
   const [soloDisponibles, setSoloDisponibles] = useState(false);
-  const [busqueda, setBusqueda] = useState('');
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [cantidad, setCantidad] = useState(1);
-  const [canchaOActividad, setCanchaOActividad] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [cancha, setCancha] = useState('');
 
-  const handleUnauthorized = () => {
-    navigation.replace('Login');
-  };
-
-  /* =========================================================================
-     CÓDIGO REAL PARA CARGAR INVENTARIO DE LA API (DESCOMENTAR ESTE BLOQUE):
-     =========================================================================
-  const cargarItemsReales = async () => {
-    try {
-      const data = await apiFetch.get('/sports/items', handleUnauthorized);
-      if (Array.isArray(data)) {
-        const normalizados = data.map((it) => ({
-          id: it.id,
-          codigo: it.codigo,
-          nombre: it.nombre,
-          deporte: it.deporte,
-          estadoFisico: it.estadoFisico || it.estado_fisico || 'BUENO',
-          cantidadTotal: it.cantidadTotal ?? it.disponibles ?? 0,
-          cantidadDisponible: it.disponibles ?? it.cantidadDisponible ?? 0,
-        }));
-        setItems(normalizados);
-      }
-    } catch (err) {
-      Alert.alert('Error', err.message || 'No se pudo cargar el inventario.');
+  const irALogin = useCallback(() => {
+    if (navigation?.replace) {
+      navigation.replace('Login');
     }
-  };
+  }, [navigation]);
+
+  const cargarInventario = useCallback(
+    async (esRefresco = false) => {
+      if (esRefresco) setRefreshing(true);
+      else setLoading(true);
+
+      try {
+        const data = await apiFetch.get('/api/sports/items', irALogin);
+        const lista = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.items)
+            ? data.items
+            : Array.isArray(data?.data)
+              ? data.data
+              : [];
+        setItems(lista.map(normalizarItem));
+      } catch (error) {
+        Alert.alert('Error', error.message || 'No se pudo cargar el inventario.');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [irALogin]
+  );
 
   useEffect(() => {
-    cargarItemsReales();
-  }, []);
-  ========================================================================= */
+    cargarInventario(false);
+  }, [cargarInventario]);
 
-  const filteredItems = items.filter((it) => {
-    const matchDep = deporte === 'Todo' || it.deporte === deporte;
-    const matchDisp = !soloDisponibles || it.cantidadDisponible > 0;
+  const filteredItems = items.filter((item) => {
+    const depItem = normalizarTexto(item.deporte);
+    const depFiltro = normalizarTexto(deporte);
+
+    let matchDeporte = true;
+    if (depFiltro === 'otros') {
+      matchDeporte =
+        depItem === 'otros' ||
+        depItem === 'otro' ||
+        !DEPORTES_PRINCIPALES.some((p) => depItem.includes(p));
+    } else if (depFiltro !== 'todo' && depFiltro !== 'todos') {
+      matchDeporte = depItem.includes(depFiltro);
+    }
+
+    const matchDisp = !soloDisponibles || item.cantidadDisponible > 0;
     const matchSearch =
-      it.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      it.codigo.toLowerCase().includes(busqueda.toLowerCase());
-    return matchDep && matchDisp && matchSearch;
+      normalizarTexto(item.nombre).includes(normalizarTexto(search)) ||
+      normalizarTexto(item.codigo).includes(normalizarTexto(search));
+
+    return matchDeporte && matchDisp && matchSearch;
   });
 
-  const openModal = (item) => {
-    setSelectedItem(item);
-    setCantidad(1);
-    setCanchaOActividad('');
+  const getBadgeColor = (estado) => {
+    if (estado === 'NUEVO') return COLORS.success;
+    if (estado === 'BUENO') return COLORS.info;
+    return COLORS.warning;
   };
 
-  const handleConfirmLoan = async () => {
+  const confirmLoan = async () => {
     if (!selectedItem) return;
-    if (!canchaOActividad.trim()) {
-      return Alert.alert('Campo requerido', 'Indica la cancha o actividad.');
+    if (!cancha.trim()) {
+      return Alert.alert('Dato requerido', 'Escribe la cancha o actividad.');
     }
     if (cantidad < 1 || cantidad > selectedItem.cantidadDisponible) {
-      return Alert.alert('Cantidad inválida', 'La cantidad no puede exceder los disponibles.');
+      return Alert.alert('Cantidad inválida', 'Revisa el stock disponible.');
     }
 
     setSubmitting(true);
-
-    /* =========================================================================
-       CÓDIGO REAL PARA ENVIAR PRÉSTAMO A LA API (DESCOMENTAR ESTE BLOQUE):
-       =========================================================================
     try {
-      const res = await apiFetch.post(
-        '/sports/loans',
+      await apiFetch.post(
+        '/api/sports/loans',
         {
           itemId: selectedItem.id,
           cantidad: Number(cantidad),
-          canchaOActividad: canchaOActividad.trim(),
+          canchaOActividad: cancha.trim(),
         },
-        handleUnauthorized
+        irALogin
       );
-      await cargarItemsReales();
-      setLoans([
-        {
-          id: res?.loanId || Date.now(),
-          itemId: selectedItem.id,
-          itemNombre: selectedItem.nombre,
-          cantidad: Number(cantidad),
-          canchaOActividad: canchaOActividad.trim(),
-          fechaSalida: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          estatus: res?.estatus || 'ACTIVO',
-        },
-        ...loans,
-      ]);
+
+      await cargarInventario(false);
+      if (typeof onLoanCreated === 'function') {
+        onLoanCreated();
+      }
+
       setSelectedItem(null);
-      Alert.alert('Solicitud enviada', 'Tu préstamo deportivo quedó registrado.');
-    } catch (err) {
-      Alert.alert('Error', err.message || 'No se pudo solicitar el préstamo.');
+      setCancha('');
+      setCantidad(1);
+      Alert.alert('¡Listo!', 'Tu solicitud de préstamo ha sido registrada.');
+    } catch (error) {
+      Alert.alert('Error', error.message || 'No se pudo registrar el préstamo.');
     } finally {
       setSubmitting(false);
     }
-    return;
-    ========================================================================= */
-
-    // SIMULACIÓN TEMPORAL SIN BACKEND
-    setItems((prev) =>
-      prev.map((it) =>
-        it.id === selectedItem.id
-          ? { ...it, cantidadDisponible: it.cantidadDisponible - cantidad }
-          : it
-      )
-    );
-
-    const newLoan = {
-      id: Date.now(),
-      itemId: selectedItem.id,
-      itemNombre: selectedItem.nombre,
-      cantidad,
-      canchaOActividad: canchaOActividad.trim(),
-      fechaSalida: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      estatus: 'ACTIVO',
-    };
-    setLoans([newLoan, ...loans]);
-    setSubmitting(false);
-    setSelectedItem(null);
-    Alert.alert('Préstamo solicitado', 'Se registró en Mis solicitudes.');
   };
 
   return (
     <View style={styles.container}>
-      <MobileHeader navigation={navigation} />
+      <MobileHeader title="Material Deportivo" navigation={navigation} />
 
       <View style={styles.body}>
-        <Text style={styles.pageTitle}>Inventario de Material</Text>
-
         <View style={styles.searchBox}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar artículo o código..."
-            value={busqueda}
-            onChangeText={setBusqueda}
+            placeholder="Buscar por nombre o código..."
+            placeholderTextColor={COLORS.muted}
+            value={search}
+            onChangeText={setSearch}
           />
-          <Search size={18} color={COLORS.muted} />
+          <Ionicons name="search" size={18} color={COLORS.muted} />
         </View>
 
-        <View style={styles.chipsRow}>
-          {DEPORTES.map((dep) => {
-            const active = deporte === dep;
-            return (
-              <TouchableOpacity
-                key={dep}
-                style={[styles.chip, active && { backgroundColor: COLORS.primary }]}
-                onPress={() => setDeporte(dep)}
-              >
-                <Text style={[styles.chipText, active && { color: '#FFFFFF' }]}>{dep}</Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={styles.chipsWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsContent}
+          >
+            {DEPORTES.map((dep) => {
+              const active = deporte === dep;
+              return (
+                <TouchableOpacity
+                  key={dep}
+                  style={[
+                    styles.chip,
+                    active && { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+                  ]}
+                  onPress={() => setDeporte(dep)}
+                >
+                  <Text style={[styles.chipText, active && { color: '#FFFFFF' }]}>{dep}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
 
         <TouchableOpacity
-          style={styles.filterToggle}
           onPress={() => setSoloDisponibles(!soloDisponibles)}
+          style={styles.checkRow}
         >
-          <View style={[styles.checkbox, soloDisponibles && { backgroundColor: COLORS.primary, borderColor: COLORS.primary }]} />
-          <Text style={styles.filterToggleText}>Solo disponibles</Text>
+          <View style={[styles.checkbox, soloDisponibles && { backgroundColor: COLORS.info, borderColor: COLORS.info }]}>
+            {soloDisponibles && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+          </View>
+          <Text style={styles.checkLabel}>Mostrar solo disponibles</Text>
         </TouchableOpacity>
 
-        <FlatList
-          data={filteredItems}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          renderItem={({ item }) => {
-            const agotado = item.cantidadDisponible <= 0;
-            return (
-              <View style={styles.card}>
-                <View style={styles.cardTop}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.itemName}>{item.nombre}</Text>
-                    <Text style={styles.itemCode}>Código: {item.codigo} • {item.deporte}</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 24 }} />
+        ) : (
+          <FlatList
+            data={filteredItems}
+            keyExtractor={(item) => String(item.id)}
+            contentContainerStyle={{ paddingBottom: 24 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => cargarInventario(true)}
+                colors={[COLORS.primary]}
+              />
+            }
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>No hay artículos que coincidan con el filtro.</Text>
+            }
+            renderItem={({ item }) => {
+              const agotado = item.cantidadDisponible <= 0;
+              return (
+                <View style={styles.card}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.itemCode}>{item.codigo}</Text>
+                    <View style={[styles.badge, { backgroundColor: getBadgeColor(item.estadoFisico) }]}>
+                      <Text style={styles.badgeText}>{item.estadoFisico}</Text>
+                    </View>
                   </View>
-                  <View style={[styles.badge, { backgroundColor: getBadgeColor(item.estadoFisico) }]}>
-                    <Text style={styles.badgeText}>{item.estadoFisico}</Text>
-                  </View>
-                </View>
 
-                <Text style={styles.stockText}>
-                  Disponibles: <Text style={{ fontWeight: '700' }}>{item.cantidadDisponible}</Text>
-                </Text>
-
-                <TouchableOpacity
-                  style={[styles.requestBtn, agotado && styles.disabledBtn]}
-                  disabled={agotado}
-                  onPress={() => openModal(item)}
-                >
-                  <Text style={styles.requestBtnText}>
-                    {agotado ? 'Agotado' : 'Solicitar préstamo'}
+                  <Text style={styles.itemName}>{item.nombre}</Text>
+                  <Text style={styles.itemSport}>{item.deporte}</Text>
+                  <Text style={styles.stockText}>
+                    {item.cantidadDisponible} / {item.cantidadTotal} disponibles
                   </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          }}
-        />
+
+                  <TouchableOpacity
+                    disabled={agotado}
+                    style={[styles.btnRequest, agotado && { backgroundColor: COLORS.muted }]}
+                    onPress={() => {
+                      setSelectedItem(item);
+                      setCantidad(1);
+                    }}
+                  >
+                    <Text style={styles.btnRequestText}>
+                      {agotado ? 'Agotado' : 'Solicitar préstamo'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }}
+          />
+        )}
       </View>
 
-      {/* Bottom Sheet / Modal de Solicitud (Pantalla B2) */}
-      <Modal
-        visible={Boolean(selectedItem)}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setSelectedItem(null)}
-      >
-        <View style={styles.modalBackdrop}>
+      <Modal visible={!!selectedItem} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
           <View style={styles.bottomSheet}>
+            <View style={styles.sheetHandle} />
+
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Solicitar Préstamo</Text>
-              <TouchableOpacity onPress={() => setSelectedItem(null)}>
-                <X size={22} color={COLORS.text} />
+              <Text style={styles.sheetTitle} numberOfLines={1}>
+                {selectedItem?.nombre}
+              </Text>
+              <TouchableOpacity onPress={() => setSelectedItem(null)} style={styles.closeBtn}>
+                <Ionicons name="close" size={22} color={COLORS.text} />
               </TouchableOpacity>
             </View>
 
-            {selectedItem && (
-              <>
-                <Text style={styles.modalItemName}>
-                  {selectedItem.nombre} ({selectedItem.codigo})
+            <View style={styles.availPill}>
+              <Text style={styles.availPillText}>
+                {selectedItem?.cantidadDisponible ?? 0} Disponibles
+              </Text>
+            </View>
+
+            <Text style={styles.sheetLabel}>Cantidad</Text>
+            <View style={styles.stepperBox}>
+              <TouchableOpacity
+                style={styles.stepTouch}
+                onPress={() => setCantidad(Math.max(1, cantidad - 1))}
+              >
+                <Text style={styles.stepSymbol}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.stepValue}>{cantidad}</Text>
+              <TouchableOpacity
+                style={styles.stepTouch}
+                onPress={() =>
+                  setCantidad(Math.min(selectedItem?.cantidadDisponible || 1, cantidad + 1))
+                }
+              >
+                <Text style={styles.stepSymbol}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.sheetLabel}>Cancha o Actividad</Text>
+            <TextInput
+              style={styles.sheetInput}
+              placeholder="Ej. Cancha 2 - Torneo"
+              placeholderTextColor={COLORS.muted}
+              value={cancha}
+              onChangeText={setCancha}
+            />
+
+            <View style={styles.sheetActions}>
+              <TouchableOpacity
+                onPress={() => setSelectedItem(null)}
+                style={styles.cancelBtn}
+                disabled={submitting}
+              >
+                <Text style={styles.cancelText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.confirmBtn, submitting && { backgroundColor: COLORS.muted }]}
+                onPress={confirmLoan}
+                disabled={submitting}
+              >
+                <Text style={styles.confirmBtnText}>
+                  {submitting ? 'Enviando...' : 'Confirmar Préstamo'}
                 </Text>
-                <Text style={styles.modalAvailable}>
-                  Máximo disponible: {selectedItem.cantidadDisponible}
-                </Text>
-
-                <Text style={styles.label}>Cantidad</Text>
-                <View style={styles.qtyRow}>
-                  <TouchableOpacity
-                    style={styles.qtyBtn}
-                    onPress={() => setCantidad((c) => Math.max(1, c - 1))}
-                  >
-                    <Text style={styles.qtyBtnText}>-</Text>
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.qtyInput}
-                    keyboardType="number-pad"
-                    value={String(cantidad)}
-                    onChangeText={(txt) => {
-                      const num = parseInt(txt, 10);
-                      if (Number.isNaN(num)) {
-                        setCantidad(1);
-                      } else {
-                        setCantidad(Math.min(selectedItem.cantidadDisponible, Math.max(1, num)));
-                      }
-                    }}
-                  />
-                  <TouchableOpacity
-                    style={styles.qtyBtn}
-                    onPress={() =>
-                      setCantidad((c) => Math.min(selectedItem.cantidadDisponible, c + 1))
-                    }
-                  >
-                    <Text style={styles.qtyBtnText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={styles.label}>Cancha o Actividad</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej. Cancha 2 - Torneo"
-                  value={canchaOActividad}
-                  onChangeText={setCanchaOActividad}
-                />
-
-                <TouchableOpacity
-                  style={[styles.confirmBtn, submitting && styles.disabledBtn]}
-                  disabled={submitting}
-                  onPress={handleConfirmLoan}
-                >
-                  <Text style={styles.confirmBtnText}>
-                    {submitting ? 'Enviando...' : 'Confirmar Préstamo'}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -319,22 +345,16 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 14,
-  },
-  pageTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 10,
+    paddingTop: 12,
   },
   searchBox: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#BDBDBD',
+    paddingHorizontal: 12,
     marginBottom: 10,
   },
   searchInput: {
@@ -343,103 +363,133 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text,
   },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  chipsWrapper: {
+    height: 40,
+    marginBottom: 10,
+  },
+  chipsContent: {
+    alignItems: 'center',
+    paddingRight: 20,
     gap: 8,
-    marginBottom: 8,
   },
   chip: {
     backgroundColor: COLORS.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#BDBDBD',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   chipText: {
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.text,
   },
-  filterToggle: {
+  checkRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     marginBottom: 12,
   },
   checkbox: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
+    width: 18,
+    height: 18,
     borderWidth: 1.5,
-    borderColor: COLORS.muted,
+    borderColor: COLORS.text,
+    borderRadius: 4,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  filterToggleText: {
+  checkLabel: {
     fontSize: 13,
-    color: COLORS.text,
     fontWeight: '600',
+    color: COLORS.text,
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: COLORS.muted,
+    marginTop: 24,
+    fontSize: 14,
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#BDBDBD',
+    padding: 16,
+    marginBottom: 12,
   },
-  cardTop: {
+  rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  itemName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
+    alignItems: 'center',
   },
   itemCode: {
     fontSize: 12,
+    fontWeight: '700',
     color: COLORS.muted,
-    marginTop: 2,
   },
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 3,
-    borderRadius: 10,
+    borderRadius: 12,
   },
   badgeText: {
     fontSize: 11,
     fontWeight: '700',
     color: COLORS.text,
   },
+  itemName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginTop: 6,
+  },
+  itemSport: {
+    fontSize: 12,
+    color: COLORS.muted,
+    marginTop: 2,
+  },
   stockText: {
     fontSize: 13,
+    fontWeight: '600',
     color: COLORS.text,
     marginTop: 8,
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  requestBtn: {
+  btnRequest: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 10,
     borderRadius: 10,
+    paddingVertical: 10,
     alignItems: 'center',
   },
-  requestBtnText: {
+  btnRequestText: {
     color: '#FFFFFF',
-    fontWeight: '700',
     fontSize: 13,
+    fontWeight: '700',
   },
-  disabledBtn: {
-    backgroundColor: COLORS.muted,
-  },
-  modalBackdrop: {
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(60, 55, 55, 0.5)',
   },
   bottomSheet: {
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    padding: 20,
+    padding: 22,
+    paddingBottom: 30,
+  },
+  sheetHandle: {
+    width: 54,
+    height: 4,
+    backgroundColor: '#BDBDBD',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 10,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -447,75 +497,92 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  modalTitle: {
-    fontSize: 18,
+  sheetTitle: {
+    fontSize: 17,
     fontWeight: '700',
     color: COLORS.text,
+    flex: 1,
+    marginRight: 8,
   },
-  modalItemName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
+  closeBtn: {
+    padding: 4,
   },
-  modalAvailable: {
-    fontSize: 12,
-    color: COLORS.muted,
+  availPill: {
+    backgroundColor: COLORS.info,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 12,
     marginBottom: 14,
   },
-  label: {
+  availPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  sheetLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: COLORS.text,
     marginBottom: 6,
   },
-  qtyRow: {
+  stepperBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    borderWidth: 1,
+    borderColor: '#9E9E9E',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
     marginBottom: 14,
   },
-  qtyBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: COLORS.bg,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  qtyBtnText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  qtyInput: {
-    width: 60,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    textAlign: 'center',
+  stepTouch: {
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    fontSize: 15,
+  },
+  stepSymbol: {
+    fontSize: 16,
     fontWeight: '700',
     color: COLORS.text,
   },
-  input: {
+  stepValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    paddingHorizontal: 10,
+    color: COLORS.text,
+  },
+  sheetInput: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#9E9E9E',
     borderRadius: 8,
     padding: 10,
     fontSize: 14,
     color: COLORS.text,
-    marginBottom: 16,
+    marginBottom: 20,
+  },
+  sheetActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  cancelText: {
+    color: COLORS.muted,
+    fontSize: 13,
+    fontWeight: '600',
   },
   confirmBtn: {
     backgroundColor: COLORS.success,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
   },
   confirmBtnText: {
     color: COLORS.text,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
   },
 });

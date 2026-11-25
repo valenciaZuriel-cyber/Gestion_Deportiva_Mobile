@@ -1,13 +1,18 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LogOut } from 'lucide-react-native';
 import { COLORS } from '../styles/theme';
 
-export default function MobileHeader({ title, navigation }) {
+export default function MobileHeader({ title = 'Gestión Deportiva', navigation }) {
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('sesion_deportes');
-    navigation.replace('Login');
+    try {
+      await AsyncStorage.removeItem('sesion_deportes');
+    } catch (e) {
+      console.error(e);
+    }
+    if (navigation?.replace) {
+      navigation.replace('Login');
+    }
   };
 
   return (
@@ -17,7 +22,6 @@ export default function MobileHeader({ title, navigation }) {
       </Text>
 
       <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-        <LogOut size={16} color="#FFFFFF" />
         <Text style={styles.logoutText}>Salir</Text>
       </TouchableOpacity>
     </View>
@@ -42,9 +46,6 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
     backgroundColor: COLORS.primary,
     paddingHorizontal: 12,
     paddingVertical: 7,

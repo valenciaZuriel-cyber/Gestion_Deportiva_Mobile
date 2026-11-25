@@ -1,23 +1,26 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://proyecto-idgs9-v1.onrender.com';
 const APP_TOKEN = process.env.EXPO_PUBLIC_API_APP_TOKEN || '';
 
-async function request(endpoint, options = {}, onUnauthorized = null) {
+async function request(endpoint, options = {}, onUnauthorized) {
   const sesionRaw = await AsyncStorage.getItem('sesion_deportes');
-  const sesion = sesionRaw ? JSON.parse(sesionRaw) : {};
+  let sesion = {};
+  try {
+    sesion = sesionRaw ? JSON.parse(sesionRaw) : {};
+  } catch {
+    sesion = {};
+  }
 
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
 
-  // Header 1: Autenticación de la aplicación cliente (x-api-token)[cite: 3]
   if (APP_TOKEN) {
     headers['x-api-token'] = APP_TOKEN;
   }
 
-  // Header 2: Autorización del usuario autenticado (Bearer <token>)[cite: 3]
   const userToken = sesion.token || sesion.accessToken;
   if (userToken) {
     headers.Authorization = `Bearer ${userToken}`;
@@ -28,19 +31,22 @@ async function request(endpoint, options = {}, onUnauthorized = null) {
     headers,
   });
 
-  // 401 Unauthorized: limpiar sesión guardada y redirigir a Login[cite: 3]
   if (response.status === 401) {
     await AsyncStorage.removeItem('sesion_deportes');
-    if (typeof onUnauthorized === 'function') {
+    const esLogin = endpoint.includes('/auth/login');
+    if (!esLogin && typeof onUnauthorized === 'function') {
       onUnauthorized();
     }
-    throw new Error('Sesión expirada o no autorizada (401).');
+    throw new Error(
+      esLogin
+        ? 'Correo o contraseña incorrectos (401).'
+        : 'Sesión expirada o no autorizada (401).'
+    );
   }
 
-  // 403 Forbidden: acceso restringido[cite: 3]
   if (response.status === 403) {
-    const errData = await response.json().catch(() => null);
-    throw new Error(errData?.message || 'Acceso restringido (403).');
+    const forbiddenData = await response.json().catch(() => null);
+    throw new Error(forbiddenData?.message || 'Acceso restringido (403).');
   }
 
   const data = await response.json().catch(() => null);

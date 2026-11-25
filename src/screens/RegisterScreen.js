@@ -1,102 +1,121 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Eye, EyeOff } from 'lucide-react-native';
-// import apiFetch from '../api/apiFetch'; // <-- DESCOMENTAR AL CONECTAR API
-import { COLORS } from '../styles/theme';
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
+import apiFetch from "../api/apiFetch";
+import { COLORS } from "../styles/theme";
 
 export default function RegisterScreen({ navigation }) {
-  const [form, setForm] = useState({ nombre: '', matricula: '', email: '', password: '', confirm: '' });
-  const [showPass, setShowPass] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [nombre, setNombre] = useState("");
+  const [matricula, setMatricula] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (Object.values(form).some((v) => !v.trim())) {
-      return Alert.alert('Campos requeridos', 'Completa todos los campos.');
-    }
-    if (form.password !== form.confirm) {
-      return Alert.alert('Error', 'Las contraseñas no coinciden.');
+    if (
+      !nombre.trim() ||
+      !matricula.trim() ||
+      !email.trim() ||
+      !password.trim()
+    ) {
+      return Alert.alert(
+        "Campos incompletos",
+        "Completa todos los campos para registrarte.",
+      );
     }
 
     setLoading(true);
-
-    /* =========================================================================
-       CÓDIGO REAL PARA CUANDO EL PROFESOR PASE LA API (DESCOMENTAR ESTE BLOQUE):
-       =========================================================================
     try {
-      await apiFetch.post('/auth/register', {
-        nombre: form.nombre,
-        matricula: form.matricula,
-        email: form.email,
-        password: form.password,
-        rol: 'USER',
+      await apiFetch.post("/api/auth/register", {
+        nombre: nombre.trim(),
+        matricula: matricula.trim(),
+        email: email.trim(),
+        password,
       });
-      Alert.alert('Registro exitoso', 'Cuenta creada con rol USER.', [
-        { text: 'Iniciar Sesión', onPress: () => navigation.navigate('Login') },
-      ]);
+
+      Alert.alert(
+        "Registro exitoso",
+        "Tu cuenta de estudiante fue creada. Ya puedes iniciar sesión.",
+        [{ text: "Ir a Login", onPress: () => navigation.replace("Login") }],
+      );
     } catch (error) {
-      Alert.alert('Error al registrar', error.message || 'No se pudo completar el registro.');
+      Alert.alert("Error en registro", error.message);
     } finally {
       setLoading(false);
     }
-    return;
-    ========================================================================= */
-
-    // SIMULACIÓN TEMPORAL SIN BACKEND
-    setTimeout(() => {
-      setLoading(false);
-      Alert.alert('Registro exitoso', 'Cuenta creada con rol USER.', [
-        { text: 'Iniciar Sesión', onPress: () => navigation.navigate('Login') },
-      ]);
-    }, 400);
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, paddingTop: 44 }}>
+    <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.title}>¡REGÍSTRATE!</Text>
-        <Text style={styles.subtitle}>Regístrate para acceder al sistema</Text>
+        <Text style={styles.title}>Crear Cuenta</Text>
+        <Text style={styles.subtitle}>Registro de estudiante (USER)</Text>
 
-        <Text style={styles.label}>Nombre Completo</Text>
-        <TextInput style={styles.input} value={form.nombre} onChangeText={(v) => setForm({ ...form, nombre: v })} />
+        <Text style={styles.label}>Nombre completo</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Ej. Ana López"
+          value={nombre}
+          onChangeText={setNombre}
+        />
 
-        <Text style={styles.label}>Matrícula / ID</Text>
-        <TextInput style={styles.input} value={form.matricula} onChangeText={(v) => setForm({ ...form, matricula: v })} />
+        <Text style={styles.label}>Matrícula</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Ej. 22300123"
+          value={matricula}
+          onChangeText={setMatricula}
+        />
 
-        <Text style={styles.label}>Correo Electrónico</Text>
-        <TextInput style={styles.input} autoCapitalize="none" keyboardType="email-address" value={form.email} onChangeText={(v) => setForm({ ...form, email: v })} />
+        <Text style={styles.label}>Correo</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="alumno@utr.edu.mx"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
 
         <Text style={styles.label}>Contraseña</Text>
-        <View style={styles.passBox}>
-          <TextInput style={[styles.input, { marginBottom: 0, paddingRight: 40 }]} secureTextEntry={!showPass} value={form.password} onChangeText={(v) => setForm({ ...form, password: v })} />
-          <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
-            {showPass ? <EyeOff size={18} color={COLORS.muted} /> : <Eye size={18} color={COLORS.muted} />}
-          </TouchableOpacity>
-        </View>
+        <TextInput
+          style={styles.input}
+          placeholder="Mínimo 6 caracteres"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
 
-        <Text style={[styles.label, { marginTop: 12 }]}>Confirmar Contraseña</Text>
-        <View style={styles.passBox}>
-          <TextInput style={[styles.input, { marginBottom: 0, paddingRight: 40 }]} secureTextEntry={!showConfirm} value={form.confirm} onChangeText={(v) => setForm({ ...form, confirm: v })} />
-          <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} style={styles.eyeBtn}>
-            {showConfirm ? <EyeOff size={18} color={COLORS.muted} /> : <Eye size={18} color={COLORS.muted} />}
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.rolePill}>
-          <Text style={styles.rolePillText}>Rol por defecto: USER</Text>
-        </View>
-
-        <TouchableOpacity style={styles.btnPrimary} onPress={handleRegister} disabled={loading}>
-          <Text style={styles.btnText}>{loading ? 'Registrando...' : 'Registrarse'}</Text>
+        <TouchableOpacity
+          style={[
+            styles.btnPrimary,
+            loading && { backgroundColor: COLORS.muted },
+          ]}
+          onPress={handleRegister}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.btnText}>Registrarme</Text>
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigation.navigate('Login')} style={{ marginTop: 14 }}>
-          <Text style={styles.linkText}>
-            ¿Ya tienes cuenta? <Text style={{ fontWeight: '700', textDecorationLine: 'underline' }}>Inicia Sesión</Text>
-          </Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.linkBtn}
+        >
+          <Text style={styles.linkText}>Volver a Iniciar Sesión</Text>
         </TouchableOpacity>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -104,78 +123,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
+    justifyContent: "center",
+    padding: 20,
   },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#CFCFCF',
-    padding: 22,
-  },
+  card: { backgroundColor: COLORS.surface, borderRadius: 18, padding: 22 },
   title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 12,
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 18,
-  },
-  label: {
-    fontSize: 12,
+    fontSize: 22,
+    fontWeight: "700",
     color: COLORS.text,
     marginBottom: 4,
   },
+  subtitle: { fontSize: 13, color: COLORS.muted, marginBottom: 18 },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginBottom: 6,
+  },
   input: {
-    borderWidth: 1,
-    borderColor: '#BDBDBD',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: "#D1D1D1",
+    borderRadius: 10,
+    padding: 12,
     fontSize: 14,
     color: COLORS.text,
-  },
-  passBox: {
-    position: 'relative',
-    justifyContent: 'center',
-  },
-  eyeBtn: {
-    position: 'absolute',
-    right: 12,
-  },
-  rolePill: {
-    backgroundColor: COLORS.info,
-    alignSelf: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: 18,
-  },
-  rolePillText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
+    marginBottom: 14,
+    backgroundColor: "#FFFFFF",
   },
   btnPrimary: {
     backgroundColor: COLORS.primary,
-    borderRadius: 24,
-    paddingVertical: 13,
-    alignSelf: 'center',
-    width: 200,
-    alignItems: 'center',
-    marginTop: 14,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 4,
   },
-  btnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  linkText: {
-    color: COLORS.info,
-    textAlign: 'center',
-    fontSize: 13,
-  },
+  btnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
+  linkBtn: { marginTop: 16, alignItems: "center" },
+  linkText: { color: COLORS.text, fontWeight: "600", fontSize: 13 },
 });
